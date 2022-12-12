@@ -1,0 +1,468 @@
+---
+title: "Term Project: STA 108"
+author: "Riley Adams"
+date: "12/13/2020"
+output: pdf_document
+---
+
+```{r, echo=FALSE,message=FALSE}
+
+# set up for project / take 80% subsample
+country <- read.csv("~/UCD/Fall 2020/STA 108/data/countries.csv")
+set.seed(918343985)
+dim(country)
+country80 <- country[sample(187, 187 * .8),]
+rm(country)
+attach(country80)
+dim(country80)
+
+```
+
+
+```{r}
+
+#scatterplots (initial)
+pairs(cbind(LifeExpectancy, LandArea, Population, Rural, Health, Internet, BirthRate, ElderlyPop, CO2, GDP, Cell))
+
+```
+
+
+
+Life Expectancy appears to have no correlation with LandArea, Population.
+
+There appears to be a negative linear trend with Rural, BirthRate.
+
+There appears to be positive linear trend with Health, Cell.
+
+With internet, elderlypopulation, CO2 and GDP there is som kind of positive relationship that is not linear.
+
+```{r}
+
+## fit model and summary output [1] -----
+fit1 <- lm(LifeExpectancy ~ LandArea + Population + Rural + Health + Internet + BirthRate + ElderlyPop + CO2 + GDP + Cell, data = country80)
+summary(fit1)
+
+```
+
+Initial model above.
+
+```{r}
+
+# Residual analysis [1] ---
+
+# Residual plots
+plot(fit1, which = 1)
+
+#Normal Probability Plot
+plot(fit1, which = 2)
+
+
+```
+
+
+
+```{r}
+
+# Model Selection ----
+library(leaps)
+
+## Forward selection 
+fit1_forward <- regsubsets(LifeExpectancy ~ LandArea + Population + Rural + Health + Internet + BirthRate + ElderlyPop + CO2 + GDP + Cell, 
+                           data = country80, method = "forward")
+cbind(summary(fit1_forward)$which, "adjusted r^2" = summary(fit1_forward)$adjr2)
+
+## Backward elimination 
+fit1_backward <- regsubsets(LifeExpectancy ~ LandArea + Population + Rural + Health + Internet + BirthRate + ElderlyPop + CO2 + GDP + Cell, 
+                             data = country80, method = "backward")
+cbind(summary(fit1_backward)$which, "adjusted r^2" = summary(fit1_backward)$adjr2)
+
+
+```
+
+Backward Elimination suggests best model is: LifeExpectancy ~ Rural, Health, Internet, BirthRate, ElderlyPop, GDP, Cell
+
+I'll fit that as the new model, fit2.
+
+```{r}
+
+## fit model and summary output [2] -----
+fit2 <- lm(LifeExpectancy ~ Rural + Health + Internet + BirthRate + ElderlyPop + GDP + Cell, data = country80)
+summary(fit2)
+
+```
+
+```{r}
+
+# Residual analysis [2] ---
+
+# Residual plots
+plot(fit2, which = 1)
+
+#Normal Probability Plot
+plot(fit2, which = 2)
+
+```
+
+Residual Plot: 
+
+  - Linearity: Residuals a little high in the middle. somewhat nonlinear.
+  
+  - Variance: non-constant. Lower variance at high end.
+
+QQ Plot:
+  
+  - Fairly good. Values at lowest end are too low.
+  
+Good candidate for boxcox.
+
+```{r}
+library(MASS)
+
+# Boxcox for fit2
+boxcox(fit2)
+
+```
+
+Box Cox suggests we raise Y to approx 1.5 or 2. Closer to 2. So we will try that.
+
+
+```{r}
+
+## fit model and summary output [3] -----
+LifeExpectSq <- (LifeExpectancy)^2
+fit3 <- lm(LifeExpectSq ~ Rural + Health + Internet + BirthRate + ElderlyPop + GDP + Cell, data = country80)
+summary(fit3)
+
+
+```
+
+
+```{r}
+
+# Residual analysis [3] ---
+
+# Residual plots
+plot(fit3, which = 1)
+
+#Normal Probability Plot
+plot(fit3, which = 2)
+
+```
+
+Residuals are looking better. Variance has tightened up and linearity as well. Lower end of QQ plot tucked in a little and the rest almost perfectly normal.
+
+We will run another model selection process to see if any predictors have become insignificant.
+
+```{r}
+
+# Model Selection [3] ----
+## Forward selection 
+fit3_forward <- regsubsets(LifeExpectSq ~ Rural + Health + Internet + BirthRate + ElderlyPop + GDP + Cell, 
+                           data = country80, method = "forward")
+cbind(summary(fit3_forward)$which, "adjusted r^2" = summary(fit3_forward)$adjr2)
+
+## Backward elimination 
+fit3_backward <- regsubsets(LifeExpectSq ~ Rural + Health + Internet + BirthRate + ElderlyPop + GDP + Cell, 
+                             data = country80, method = "backward")
+cbind(summary(fit3_backward)$which, "adjusted r^2" = summary(fit3_backward)$adjr2)
+
+# Mallow's Cp
+fit3_subset <- regsubsets(LifeExpectSq ~ Rural + Health + Internet + BirthRate + ElderlyPop + GDP + Cell, 
+                            data = country80, method = "exhaustive")
+cbind(summary(fit3_subset)$which, "Mallows' Cp" = summary(fit3_subset)$cp)
+
+```
+
+Step-wise method says to keep Cell, but not by a lot. 
+
+Mallows' Cp seems to fit the model better without cell.
+
+Furthermore t-test for cell suggests it is not significant after other predictors accounted for.
+
+Try building model without it and see if residuals tighten up.
+
+
+```{r}
+
+## fit model and summary output [4] -----
+fit4 <- lm(LifeExpectSq ~ Rural + Health + Internet + BirthRate + ElderlyPop + GDP, data = country80)
+summary(fit4)
+
+```
+
+adjR^2 dropped just a little bit. But t-tests for all variables are now significant.
+
+Let's carry out residual analysis, and see if it is any better.
+
+```{r}
+
+# Residual analysis [4] ---
+
+# Residual plots
+plot(fit4, which = 1)
+
+#Normal Probability Plot
+plot(fit4, which = 2)
+
+```
+
+hmmm QQ plot got worse. Let's roll with this for now though. Try some X transformations.
+
+We'll plot pairs() to see what could be more linear. 
+
+
+```{r}
+
+# Pairs scatterplot analysis [4]
+pairs(cbind(LifeExpectSq, Rural, Health, Internet, BirthRate, ElderlyPop, GDP))
+
+cor.test(Rural,BirthRate)
+```
+
+I'll try transforming:
+
+
+internet -> internet^(1/2)
+elderlypop -> elderlypop^(1/2)
+GDP -> GDP^(1/2)
+
+```{r}
+
+InternetSqrt <- Internet^(.5)
+ElderSqrt <- ElderlyPop^(.5)
+GDPsqrt <- GDP^(.5)
+
+## fit model and summary output [5] -----
+fit5 <- lm(LifeExpectSq ~ Rural + Health + InternetSqrt + BirthRate + ElderSqrt + GDPsqrt, data = country80)
+summary(fit5)
+
+```
+
+adjR2 remains the same as fit4. predictors all still significant.
+
+```{r}
+
+# Residual analysis [5] ---
+
+# Residual plots
+plot(fit5, which = 1)
+
+#Normal Probability Plot
+plot(fit5, which = 2)
+
+```
+
+Best looking QQ so far. Still have the same problem with non-constant variance.
+
+Try model selection again.
+
+```{r}
+
+# Model Selection [5] ----
+
+## Forward selection 
+fit5_forward <- regsubsets(LifeExpectSq ~ Rural + Health + InternetSqrt + BirthRate + ElderSqrt + GDPsqrt, 
+                           data = country80, method = "forward")
+cbind(summary(fit5_forward)$which, "adjusted r^2" = summary(fit5_forward)$adjr2)
+
+## Backward elimination 
+fit5_backward <- regsubsets(LifeExpectSq ~ Rural + Health + InternetSqrt + BirthRate + ElderSqrt + GDPsqrt, 
+                             data = country80, method = "backward")
+cbind(summary(fit5_backward)$which, "adjusted r^2" = summary(fit5_backward)$adjr2)
+
+# Mallow's Cp
+fit5_subset <- regsubsets(LifeExpectSq ~ Rural + Health + InternetSqrt + BirthRate + ElderSqrt + GDPsqrt, 
+                            data = country80, method = "exhaustive")
+cbind(summary(fit5_subset)$which, "Mallows' Cp" = summary(fit5_subset)$cp)
+
+
+```
+
+All model selection methods confirm current model is best.
+
+
+```{r}
+
+pairs(cbind(LifeExpectSq, Rural, Health, InternetSqrt, BirthRate, ElderSqrt, GDPsqrt))
+
+```
+
+InternetSqrt looks much more linear now than internet did agains LifeExpectency. 
+
+Eldersqrt saw a bit of improvement.
+
+GDP sqrt got closer to linear as well, but still not as much as the other two.
+
+Rural and BirthRate are quite collinear, yet BirthRate has a stronger linear relationship with LifeExpectancy.
+
+Drop Rural, build new model. Compare results.
+```{r}
+
+## fit model and summary output [6] -----
+fit6 <- lm(LifeExpectSq ~ Health + InternetSqrt + BirthRate + ElderSqrt + GDPsqrt, data = country80)
+summary(fit6)
+
+```
+
+All predictors are significant except Health. Drop health. New model
+
+```{r}
+## fit model and summary output [7] -----
+fit7 <- lm(LifeExpectSq ~ InternetSqrt + BirthRate + ElderSqrt + GDPsqrt, data = country80)
+summary(fit7)
+
+```
+
+All predictors significant. AdjR2 has increased. Conduct model residual analysis.
+
+```{r}
+# Residual analysis [7] ---
+
+# Residual plots
+plot(fit7, which = 1)
+
+#Normal Probability Plot
+plot(fit7, which = 2)
+
+shapiro.test(resid(fit7))
+
+```
+
+qqplot sucks. try untransforming X vars. 
+
+Back up to fit4. notice that GDP had t-test pval > .05
+
+```{r}
+
+## fit model and summary output [8] -----
+fit8 <- lm(LifeExpectSq ~ Rural + Health + Internet + BirthRate + ElderlyPop, data = country80)
+summary(fit8)
+
+# Residual analysis [8] ---
+
+# Residual plots
+plot(fit8, which = 1)
+
+#Normal Probability Plot
+plot(fit8, which = 2)
+
+shapiro.test(resid(fit8))
+
+```
+
+model looking pretty good, however, elderlypop has pval > .05 and collinear with internet. 
+
+drop elderlypop.
+
+```{r}
+
+## fit model and summary output [9] -----
+fit9 <- lm(LifeExpectSq ~ Rural + Health + Internet + BirthRate, data = country80)
+summary(fit9)
+
+# Residual analysis [9] ---
+
+# Residual plots
+plot(fit9, which = 1)
+
+#Normal Probability Plot
+plot(fit9, which = 2)
+
+shapiro.test(resid(fit9))
+
+pairs(cbind(LifeExpectSq, Rural, Health, Internet, BirthRate))
+
+library(car)
+vif(fit8)
+vif(fit9)
+```
+
+looks quite good. see about untransforming Y, for comparison to above model.
+
+```{r}
+
+## fit model and summary output [10] -----
+fit10 <- lm(LifeExpectancy ~ Rural + Health + Internet + BirthRate + ElderlyPop, data = country80)
+summary(fit10)
+
+# Residual analysis [10] ---
+
+# Residual plots
+plot(fit10, which = 1)
+
+#Normal Probability Plot
+plot(fit10, which = 2)
+
+shapiro.test(resid(fit10))
+
+```
+
+Yea fit9 is best. but health still has borderline pval. try dropping to compare fit11 with fit9 and make judgement call about significance of Health predictor.
+
+```{r}
+
+## fit model and summary output [11] -----
+fit11 <- lm(LifeExpectSq ~ Rural + Internet + BirthRate, data = country80)
+summary(fit11)
+
+# Residual analysis [11] ---
+
+# Residual plots
+plot(fit11, which = 1)
+
+#Normal Probability Plot
+plot(fit11, which = 2)
+
+shapiro.test(resid(fit11))
+
+pairs(cbind(LifeExpectSq, Rural, Internet, BirthRate))
+
+```
+
+WORSE.
+
+Back to fit9 try one more with internet transformed to sqrt(internet)
+
+```{r}
+## fit model and summary output [12] -----
+fit12 <- lm(LifeExpectSq ~ Rural + Health + InternetSqrt + BirthRate, data = country80)
+summary(fit12)
+
+# Residual analysis [12] ---
+
+# Residual plots
+plot(fit12, which = 1)
+
+#Normal Probability Plot
+plot(fit12, which = 2)
+
+shapiro.test(resid(fit12))
+
+pairs(cbind(LifeExpectSq, Rural, Health, InternetSqrt, BirthRate))
+
+## fit 9 for comparison side-by-side --------
+summary(fit9)
+
+# Residual analysis [9] ---
+
+# Residual plots
+plot(fit9, which = 1)
+
+#Normal Probability Plot
+plot(fit9, which = 2)
+
+shapiro.test(resid(fit9))
+
+pairs(cbind(LifeExpectSq, Rural, Health, Internet, BirthRate))
+
+```
+
+Although fit12 has higher adjR2 and all predictors highly significant, fit9 has what could be considered normality in qq plot. best of all models, the only variable of concern is health, but this is borderline and seems to be important in model.
+
+fit9 is best model.
+
+
+
+
+
+
